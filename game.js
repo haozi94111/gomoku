@@ -372,11 +372,11 @@ function initBoard() {
     boardPadding = size * 0.06;
     cellSize = (size - 2 * boardPadding) / (BOARD_SIZE - 1);
     
-    // 绑定点击事件（只绑定一次）
-    if (!canvas.hasEventListener) {
+    // 绑定点击事件（使用全局标志确保只绑定一次）
+    if (!window.boardEventBound) {
         canvas.addEventListener('click', handleBoardClick);
         canvas.addEventListener('touchstart', handleTouch, { passive: false });
-        canvas.hasEventListener = true;
+        window.boardEventBound = true;
     }
     
     document.getElementById('game-room-id').textContent = currentRoomId;
