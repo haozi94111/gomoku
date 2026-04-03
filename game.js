@@ -204,7 +204,7 @@ function updateWaitingScreen(room) {
 }
 
 // 鏇存柊娓告垙椤甸潰
-function updateGameScreen(room) {
+function updateGameScreen(room) {`r`n    // 初始化必要的数据`r`n    if (!room.board) { room.board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0)); }`r`n    if (!room.moveHistory) { room.moveHistory = []; }
     const players = room.players || {};
     const playerEntries = Object.entries(players);
     
@@ -700,6 +700,7 @@ function closeConfirm() {
         database.ref(`rooms/${currentRoomId}/players/${playerId}`).remove();
     }
 });
+
 
 
 
