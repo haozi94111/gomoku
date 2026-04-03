@@ -239,11 +239,19 @@ let cellSize, boardPadding;
 
 function initBoard() {
     canvas = document.getElementById('board');
+    if (!canvas) return;
+    
     ctx = canvas.getContext('2d');
     
     // 设置画布大小
     const container = canvas.parentElement;
-    const size = container.clientWidth;
+    let size = container.clientWidth;
+    
+    // 如果容器宽度为0，使用默认大小
+    if (size === 0) {
+        size = Math.min(window.innerWidth - 40, 500);
+    }
+    
     canvas.width = size;
     canvas.height = size;
     
@@ -251,12 +259,25 @@ function initBoard() {
     boardPadding = size * 0.06;
     cellSize = (size - 2 * boardPadding) / (BOARD_SIZE - 1);
     
-    // 绑定点击事件
-    canvas.addEventListener('click', handleBoardClick);
-    canvas.addEventListener('touchstart', handleTouch, { passive: false });
+    // 绑定点击事件（只绑定一次）
+    if (!canvas.hasEventListener) {
+        canvas.addEventListener('click', handleBoardClick);
+        canvas.addEventListener('touchstart', handleTouch, { passive: false });
+        canvas.hasEventListener = true;
+    }
     
     document.getElementById('game-room-id').textContent = currentRoomId;
 }
+
+// 窗口大小变化时重新初始化
+window.addEventListener('resize', () => {
+    if (currentRoomId && canvas) {
+        initBoard();
+        if (gameState && gameState.board) {
+            drawBoard(gameState.board);
+        }
+    }
+});
 
 // 绘制棋盘
 function drawBoard(board) {
