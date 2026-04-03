@@ -13,6 +13,10 @@ let countdownInterval = null;
 let timeLeft = 50;
 const TURN_TIME_LIMIT = 50;
 
+// 时间同步 - 记录回合开始的本地时间
+let localTurnStartTime = null;
+let lastTurnKey = null;
+
 // 棋盘配置
 const BOARD_SIZE = 15;
 const EMPTY = 0;
@@ -82,7 +86,7 @@ async function createRoom() {
         status: 'waiting',
         board: Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0)),
         currentTurn: 'black',
-        turnStartTime: null,
+        turnStartTime: firebase.database.ServerValue.TIMESTAMP,
         players: {
             [playerId]: {
                 name: nickname,
@@ -177,6 +181,13 @@ function subscribeToRoom() {
         const room = snapshot.val();
         if (!room) return;
 
+        // 检测回合变化，重置本地时间参考
+        const currentTurnKey = room.currentTurn + '_' + room.turnStartTime;
+        if (currentTurnKey !== lastTurnKey) {
+            lastTurnKey = currentTurnKey;
+            localTurnStartTime = Date.now();
+        }
+
         gameState = room;
 
         if (room.status === 'waiting') {
@@ -206,7 +217,6 @@ function updateWaitingScreen(room) {
 
 // 更新游戏页面
 function updateGameScreen(room) {
-    // 初始化必要的数据
     if (!room.board) {
         room.board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
     }
@@ -223,6 +233,7 @@ function updateGameScreen(room) {
         const cardId = player.color === 'black' ? 'player-black' : 'player-white';
         const card = document.getElementById(cardId);
         card.querySelector('.name').textContent = player.name;
+        card.querySelector('.status').textContent = pid === playerId ? '(你)' : '';
     });
 
     const isBlackTurn = room.currentTurn === 'black';
@@ -231,11 +242,13 @@ function updateGameScreen(room) {
     document.getElementById('turn-arrow').classList.toggle('right', !isBlackTurn);
 
     const myPlayer = players[playerId];
+    const wasMyTurn = isMyTurn;
     isMyTurn = myPlayer && myPlayer.color === room.currentTurn && !room.winner;
 
-    if (isMyTurn && !room.winner) {
-        startCountdown(room.turnStartTime);
-    } else {
+    // 回合开始时启动倒计时
+    if (isMyTurn && !room.winner && (!wasMyTurn || !countdownInterval)) {
+        startCountdown();
+    } else if (!isMyTurn) {
         stopCountdown();
     }
 
@@ -250,30 +263,35 @@ function updateGameScreen(room) {
 }
 
 // 开始倒计时
-function startCountdown(turnStartTime) {
+function startCountdown() {
     stopCountdown();
-    const startTime = turnStartTime || Date.now();
+    localTurnStartTime = Date.now();
     
-    // 立即更新一次
-    updateAllCountdowns(startTime);
+    updateAllCountdowns();
     
     countdownInterval = setInterval(() => {
-        updateAllCountdowns(startTime);
+        updateAllCountdowns();
     }, 100);
 }
 
+// 停止倒计时
+function stopCountdown() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+}
+
 // 更新双方倒计时
-function updateAllCountdowns(startTime) {
-    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+function updateAllCountdowns() {
+    if (!localTurnStartTime) return;
+    
+    const elapsed = Math.floor((Date.now() - localTurnStartTime) / 1000);
     const timeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
     
-    // 更新自己的倒计时
     updateMyCountdown(timeLeft);
+    updateOpponentCountdown(timeLeft);
     
-    // 更新对手的倒计时（独立计算）
-    updateOpponentCountdown();
-    
-    // 时间到，自动下棋
     if (timeLeft <= 0 && isMyTurn && !gameState?.winner) {
         stopCountdown();
         autoPlaceStone();
@@ -293,16 +311,11 @@ function updateMyCountdown(seconds) {
     if (isMyTurn && !gameState.winner) {
         statusEl.textContent = `(你) ${seconds}秒`;
         statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
-    } else {
-        if (!statusEl.textContent.includes('秒')) {
-            statusEl.textContent = '(你)';
-        }
-        statusEl.style.color = '';
     }
 }
 
 // 更新对手的倒计时
-function updateOpponentCountdown() {
+function updateOpponentCountdown(myTimeLeft) {
     const players = gameState?.players || {};
     const opponentId = Object.keys(players).find(pid => pid !== playerId);
     if (!opponentId) return;
@@ -316,10 +329,9 @@ function updateOpponentCountdown() {
     
     const isOpponentTurn = opponent.color === gameState?.currentTurn && !gameState?.winner;
     if (isOpponentTurn) {
-        // 对手回合时，计算对手的剩余时间
-        const turnStartTime = gameState?.turnStartTime || Date.now();
-        const elapsed = Math.floor((Date.now() - turnStartTime) / 1000);
-        const opponentTimeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
+        // 对手回合：显示已用时间（50-我的剩余时间=对手已用时间）
+        const opponentElapsed = TURN_TIME_LIMIT - myTimeLeft;
+        const opponentTimeLeft = Math.max(0, TURN_TIME_LIMIT - opponentElapsed);
         opponentStatusEl.textContent = `${opponentTimeLeft}秒`;
         opponentStatusEl.style.color = opponentTimeLeft <= 10 ? '#ff4757' : '#999';
     } else {
@@ -345,6 +357,8 @@ function autoPlaceStone() {
     const randomMove = emptyCells[Math.floor(Math.random() * emptyCells.length)];
     const piece = playerColor === 'black' ? BLACK : WHITE;
     gameState.board[randomMove.y][randomMove.x] = piece;
+    
+    if (!gameState.moveHistory) gameState.moveHistory = [];
     gameState.moveHistory.push({ x: randomMove.x, y: randomMove.y, player: playerId });
     
     const winner = checkWin(gameState.board, randomMove.x, randomMove.y, piece);
@@ -391,13 +405,10 @@ function initBoard() {
     boardPadding = size * 0.06;
     cellSize = (size - 2 * boardPadding) / (BOARD_SIZE - 1);
     
-    console.log('棋盘初始化', { size, boardPadding, cellSize });
-    
     if (!window.boardEventBound) {
         canvas.addEventListener('click', handleBoardClick);
         canvas.addEventListener('touchstart', handleTouch, { passive: false });
         window.boardEventBound = true;
-        console.log('点击事件已绑定');
     }
     
     document.getElementById('game-room-id').textContent = currentRoomId;
@@ -501,8 +512,6 @@ function markLastMove(x, y) {
 
 // 处理点击
 function handleBoardClick(e) {
-    console.log('点击触发', { x: e.clientX, y: e.clientY, isMyTurn, hasGameState: !!gameState });
-    
     if (!isMyTurn) {
         showMessage('等待对手...');
         return;
@@ -541,16 +550,12 @@ function makeMoveAt(px, py) {
     const gridX = Math.round((px - boardPadding) / cellSize);
     const gridY = Math.round((py - boardPadding) / cellSize);
     
-    console.log('尝试下棋', { gridX, gridY, boardPadding, cellSize });
-    
     if (gridX < 0 || gridX >= BOARD_SIZE || gridY < 0 || gridY >= BOARD_SIZE) return;
     if (!gameState.board || gameState.board[gridY][gridX] !== EMPTY) return;
     
     const piece = playerColor === 'black' ? BLACK : WHITE;
     
-    if (!gameState.moveHistory) {
-        gameState.moveHistory = [];
-    }
+    if (!gameState.moveHistory) gameState.moveHistory = [];
     
     gameState.board[gridY][gridX] = piece;
     gameState.moveHistory.push({ x: gridX, y: gridY, player: playerId });
