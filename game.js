@@ -254,69 +254,76 @@ function startCountdown(turnStartTime) {
     stopCountdown();
     const startTime = turnStartTime || Date.now();
     
+    // 立即更新一次
+    updateAllCountdowns(startTime);
+    
     countdownInterval = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        timeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
-        updateCountdownDisplay(timeLeft);
-        
-        if (timeLeft <= 0) {
-            stopCountdown();
-            autoPlaceStone();
-        }
+        updateAllCountdowns(startTime);
     }, 100);
 }
 
-// 停止倒计时
-function stopCountdown() {
-    if (countdownInterval) {
-        clearInterval(countdownInterval);
-        countdownInterval = null;
-    }
-    timeLeft = TURN_TIME_LIMIT;
-    updateCountdownDisplay(timeLeft);
-}
-
-// 更新倒计时显示
-function updateCountdownDisplay(seconds) {
+// 更新双方倒计时
+function updateAllCountdowns(startTime) {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const timeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
+    
     // 更新自己的倒计时
-    const myPlayer = gameState?.players?.[playerId];
-    if (myPlayer) {
-        const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
-        const card = document.getElementById(cardId);
-        const statusEl = card.querySelector('.status');
-        if (statusEl) {
-            if (isMyTurn && !gameState.winner) {
-                statusEl.textContent = `(你) ${seconds}秒`;
-                statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
-            } else {
-                if (!statusEl.textContent.includes('秒')) {
-                    statusEl.textContent = '(你)';
-                }
-                statusEl.style.color = '';
-            }
-        }
-    }
+    updateMyCountdown(timeLeft);
     
     // 更新对手的倒计时
+    updateOpponentCountdown(timeLeft);
+    
+    // 时间到，自动下棋
+    if (timeLeft <= 0 && isMyTurn && !gameState?.winner) {
+        stopCountdown();
+        autoPlaceStone();
+    }
+}
+
+// 更新自己的倒计时
+function updateMyCountdown(seconds) {
+    const myPlayer = gameState?.players?.[playerId];
+    if (!myPlayer) return;
+    
+    const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
+    const card = document.getElementById(cardId);
+    const statusEl = card.querySelector('.status');
+    if (!statusEl) return;
+    
+    if (isMyTurn && !gameState.winner) {
+        statusEl.textContent = `(你) ${seconds}秒`;
+        statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
+    } else {
+        if (!statusEl.textContent.includes('秒')) {
+            statusEl.textContent = '(你)';
+        }
+        statusEl.style.color = '';
+    }
+}
+
+// 更新对手的倒计时
+function updateOpponentCountdown(myTimeLeft) {
     const players = gameState?.players || {};
     const opponentId = Object.keys(players).find(pid => pid !== playerId);
-    if (opponentId) {
-        const opponent = players[opponentId];
-        const opponentCardId = opponent.color === 'black' ? 'player-black' : 'player-white';
-        const opponentCard = document.getElementById(opponentCardId);
-        const opponentStatusEl = opponentCard.querySelector('.status');
-        
-        if (opponentStatusEl) {
-            const isOpponentTurn = opponent.color === gameState?.currentTurn && !gameState?.winner;
-            if (isOpponentTurn) {
-                const opponentTimeLeft = Math.max(0, TURN_TIME_LIMIT - Math.floor((Date.now() - (gameState.turnStartTime || Date.now())) / 1000));
-                opponentStatusEl.textContent = `${opponentTimeLeft}秒`;
-                opponentStatusEl.style.color = opponentTimeLeft <= 10 ? '#ff4757' : '#999';
-            } else {
-                if (!opponentStatusEl.textContent.includes('秒')) {
-                    opponentStatusEl.textContent = '';
-                }
-            }
+    if (!opponentId) return;
+    
+    const opponent = players[opponentId];
+    const opponentCardId = opponent.color === 'black' ? 'player-black' : 'player-white';
+    const opponentCard = document.getElementById(opponentCardId);
+    const opponentStatusEl = opponentCard.querySelector('.status');
+    
+    if (!opponentStatusEl) return;
+    
+    const isOpponentTurn = opponent.color === gameState?.currentTurn && !gameState?.winner;
+    if (isOpponentTurn) {
+        // 对手回合时，显示剩余时间（用总时间减去已用时间）
+        const opponentTimeLeft = TURN_TIME_LIMIT - myTimeLeft;
+        opponentStatusEl.textContent = `${opponentTimeLeft}秒`;
+        opponentStatusEl.style.color = opponentTimeLeft <= 10 ? '#ff4757' : '#999';
+    } else {
+        // 不是对手回合，清空或显示空
+        if (!opponentStatusEl.textContent.includes('秒') || opponentStatusEl.textContent === '0 秒') {
+            opponentStatusEl.textContent = '';
         }
     }
 }
