@@ -278,22 +278,46 @@ function stopCountdown() {
 
 // 更新倒计时显示
 function updateCountdownDisplay(seconds) {
+    // 更新自己的倒计时
     const myPlayer = gameState?.players?.[playerId];
-    if (!myPlayer) return;
-    
-    const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
-    const card = document.getElementById(cardId);
-    const statusEl = card.querySelector('.status');
-    if (!statusEl) return;
-    
-    if (isMyTurn && !gameState.winner) {
-        statusEl.textContent = `(你) ${seconds}秒`;
-        statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
-    } else {
-        if (!statusEl.textContent.includes('秒')) {
-            statusEl.textContent = '(你)';
+    if (myPlayer) {
+        const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
+        const card = document.getElementById(cardId);
+        const statusEl = card.querySelector('.status');
+        if (statusEl) {
+            if (isMyTurn && !gameState.winner) {
+                statusEl.textContent = `(你) ${seconds}秒`;
+                statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
+            } else {
+                if (!statusEl.textContent.includes('秒')) {
+                    statusEl.textContent = '(你)';
+                }
+                statusEl.style.color = '';
+            }
         }
-        statusEl.style.color = '';
+    }
+    
+    // 更新对手的倒计时
+    const players = gameState?.players || {};
+    const opponentId = Object.keys(players).find(pid => pid !== playerId);
+    if (opponentId) {
+        const opponent = players[opponentId];
+        const opponentCardId = opponent.color === 'black' ? 'player-black' : 'player-white';
+        const opponentCard = document.getElementById(opponentCardId);
+        const opponentStatusEl = opponentCard.querySelector('.status');
+        
+        if (opponentStatusEl) {
+            const isOpponentTurn = opponent.color === gameState?.currentTurn && !gameState?.winner;
+            if (isOpponentTurn) {
+                const opponentTimeLeft = Math.max(0, TURN_TIME_LIMIT - Math.floor((Date.now() - (gameState.turnStartTime || Date.now())) / 1000));
+                opponentStatusEl.textContent = `${opponentTimeLeft}秒`;
+                opponentStatusEl.style.color = opponentTimeLeft <= 10 ? '#ff4757' : '#999';
+            } else {
+                if (!opponentStatusEl.textContent.includes('秒')) {
+                    opponentStatusEl.textContent = '';
+                }
+            }
+        }
     }
 }
 
