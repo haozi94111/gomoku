@@ -8,6 +8,11 @@ let gameState = null;
 let roomRef = null;
 let unsubscribe = null;
 
+// 倒计时相关
+let countdownInterval = null;
+let timeLeft = 50;
+const TURN_TIME_LIMIT = 50; // 每回合50秒
+
 // 棋盘配置
 const BOARD_SIZE = 15;
 const EMPTY = 0;
@@ -77,6 +82,7 @@ async function createRoom() {
         status: 'waiting',
         board: Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0)),
         currentTurn: 'black',
+        turnStartTime: null,
         players: {
             [playerId]: {
                 name: nickname,
@@ -150,7 +156,8 @@ async function joinRoom() {
         });
 
         await database.ref(`rooms/${roomId}`).update({
-            status: 'playing'
+            status: 'playing',
+            turnStartTime: firebase.database.ServerValue.TIMESTAMP
         });
 
         showScreen('game-screen');
@@ -193,7 +200,10 @@ function updateWaitingScreen(room) {
     const players = Object.values(room.players || {});
     if (players.length >= 2) {
         // 游戏开始
-        database.ref(`rooms/${currentRoomId}`).update({ status: 'playing' });
+        database.ref(`rooms/${currentRoomId}`).update({ 
+            status: 'playing',
+            turnStartTime: firebase.database.ServerValue.TIMESTAMP
+        });
         showScreen('game-screen');
         initBoard();
     }
@@ -220,17 +230,120 @@ function updateGameScreen(room) {
 
     // 判断是否轮到我
     const myPlayer = players[playerId];
+    const wasMyTurn = isMyTurn;
     isMyTurn = myPlayer && myPlayer.color === room.currentTurn && !room.winner;
+
+    // 处理倒计时
+    if (isMyTurn && !room.winner) {
+        startCountdown(room.turnStartTime);
+    } else {
+        stopCountdown();
+    }
 
     // 更新棋盘
     drawBoard(room.board);
 
     // 显示胜利信息
     if (room.winner) {
+        stopCountdown();
         const isWin = myPlayer && myPlayer.color === room.winner;
         const winnerName = playerEntries.find(([_, p]) => p.color === room.winner)?.[1]?.name || '';
         showResult(isWin ? '你赢了！🎉' : `${winnerName} 赢了！`, isWin ? '恭喜获得胜利！' : '再接再厉！');
     }
+}
+
+// 开始倒计时
+function startCountdown(turnStartTime) {
+    stopCountdown();
+    
+    const startTime = turnStartTime || Date.now();
+    
+    countdownInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        timeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
+        
+        // 更新显示
+        updateCountdownDisplay(timeLeft);
+        
+        // 时间到，自动下棋
+        if (timeLeft <= 0) {
+            stopCountdown();
+            autoPlaceStone();
+        }
+    }, 100);
+}
+
+// 停止倒计时
+function stopCountdown() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    timeLeft = TURN_TIME_LIMIT;
+    updateCountdownDisplay(timeLeft);
+}
+
+// 更新倒计时显示
+function updateCountdownDisplay(seconds) {
+    const myPlayer = gameState?.players?.[playerId];
+    if (!myPlayer) return;
+    
+    const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
+    const card = document.getElementById(cardId);
+    const statusEl = card.querySelector('.status');
+    
+    if (isMyTurn && !gameState.winner) {
+        statusEl.textContent = `(你) ${seconds}秒`;
+        statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
+    } else {
+        statusEl.textContent = '(你)';
+        statusEl.style.color = '';
+    }
+}
+
+// 自动随机下棋
+function autoPlaceStone() {
+    if (!isMyTurn || !gameState || gameState.winner) return;
+    
+    // 找到所有空位
+    const emptyCells = [];
+    for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+            if (gameState.board[y][x] === EMPTY) {
+                emptyCells.push({x, y});
+            }
+        }
+    }
+    
+    if (emptyCells.length === 0) return;
+    
+    // 随机选择一个位置
+    const randomMove = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+    
+    // 执行下棋
+    const piece = playerColor === 'black' ? BLACK : WHITE;
+    gameState.board[randomMove.y][randomMove.x] = piece;
+    gameState.moveHistory.push({ x: randomMove.x, y: randomMove.y, player: playerId });
+    
+    // 检查胜利
+    const winner = checkWin(gameState.board, randomMove.x, randomMove.y, piece);
+    
+    // 更新到数据库
+    const updates = {
+        board: gameState.board,
+        moveHistory: gameState.moveHistory,
+        currentTurn: playerColor === 'black' ? 'white' : 'black',
+        turnStartTime: firebase.database.ServerValue.TIMESTAMP
+    };
+    
+    if (winner) {
+        updates.winner = playerColor;
+        updates.status = 'finished';
+    }
+    
+    database.ref(`rooms/${currentRoomId}`).update(updates);
+    
+    showMessage('时间到！系统自动下棋');
 }
 
 // 初始化棋盘
@@ -268,16 +381,6 @@ function initBoard() {
     
     document.getElementById('game-room-id').textContent = currentRoomId;
 }
-
-// 窗口大小变化时重新初始化
-window.addEventListener('resize', () => {
-    if (currentRoomId && canvas) {
-        initBoard();
-        if (gameState && gameState.board) {
-            drawBoard(gameState.board);
-        }
-    }
-});
 
 // 绘制棋盘
 function drawBoard(board) {
@@ -428,7 +531,8 @@ function makeMoveAt(px, py) {
     const updates = {
         board: gameState.board,
         moveHistory: gameState.moveHistory,
-        currentTurn: playerColor === 'black' ? 'white' : 'black'
+        currentTurn: playerColor === 'black' ? 'white' : 'black',
+        turnStartTime: firebase.database.ServerValue.TIMESTAMP
     };
     
     if (winner) {
@@ -495,7 +599,8 @@ function requestUndo() {
         await database.ref(`rooms/${currentRoomId}`).update({
             board: newBoard,
             moveHistory: history.slice(0, -1),
-            currentTurn: playerColor
+            currentTurn: playerColor,
+            turnStartTime: firebase.database.ServerValue.TIMESTAMP
         });
         
         closeConfirm();
@@ -509,6 +614,7 @@ function requestRestart() {
             status: 'playing',
             board: Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0)),
             currentTurn: 'black',
+            turnStartTime: firebase.database.ServerValue.TIMESTAMP,
             moveHistory: [],
             winner: null
         });
@@ -519,6 +625,8 @@ function requestRestart() {
 
 // 离开房间
 async function leaveRoom() {
+    stopCountdown();
+    
     if (unsubscribe) {
         unsubscribe();
         unsubscribe = null;
@@ -590,14 +698,17 @@ function closeConfirm() {
 
 // 窗口大小改变时重新绘制
 window.addEventListener('resize', () => {
-    if (screens.game.classList.contains('active')) {
+    if (currentRoomId && canvas) {
         initBoard();
-        if (gameState) drawBoard(gameState.board);
+        if (gameState && gameState.board) {
+            drawBoard(gameState.board);
+        }
     }
 });
 
 // 页面关闭时清理
 window.addEventListener('beforeunload', () => {
+    stopCountdown();
     if (currentRoomId && playerId) {
         database.ref(`rooms/${currentRoomId}/players/${playerId}`).remove();
     }
