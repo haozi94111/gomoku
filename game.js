@@ -219,7 +219,7 @@ function updateGameScreen(room) {
         const cardId = player.color === 'black' ? 'player-black' : 'player-white';
         const card = document.getElementById(cardId);
         card.querySelector('.name').textContent = player.name;
-        card.querySelector('.status').textContent = pid === playerId ? '(你)' : '';
+        // 不覆盖 status，由倒计时函数处理
     });
 
     // 更新回合指示
@@ -291,12 +291,16 @@ function updateCountdownDisplay(seconds) {
     const cardId = myPlayer.color === 'black' ? 'player-black' : 'player-white';
     const card = document.getElementById(cardId);
     const statusEl = card.querySelector('.status');
+    if (!statusEl) return;
     
     if (isMyTurn && !gameState.winner) {
         statusEl.textContent = `(你) ${seconds}秒`;
         statusEl.style.color = seconds <= 10 ? '#ff4757' : '#667eea';
     } else {
-        statusEl.textContent = '(你)';
+        // 不是我的回合时，只显示 (你)，不覆盖倒计时
+        if (!statusEl.textContent.includes('秒')) {
+            statusEl.textContent = '(你)';
+        }
         statusEl.style.color = '';
     }
 }
@@ -488,7 +492,21 @@ function markLastMove(x, y) {
 
 // 处理点击
 function handleBoardClick(e) {
-    if (!isMyTurn || !gameState || gameState.winner) return;
+    // 调试信息
+    console.log('点击棋盘', { isMyTurn, gameState: !!gameState, winner: gameState?.winner });
+    
+    if (!isMyTurn) {
+        showMessage('等待对手...');
+        return;
+    }
+    if (!gameState) {
+        showMessage('游戏未初始化');
+        return;
+    }
+    if (gameState.winner) {
+        showMessage('游戏已结束');
+        return;
+    }
     
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
