@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>在线五子棋</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 首页 -->
+        <div id="home-screen" class="screen active">
+            <h1>🎮 在线五子棋</h1>
+            <p class="subtitle">实时对战 · 支持手机</p>
+            
+            <div class="menu-buttons">
+                <button class="btn btn-primary" onclick="showCreateRoom()">创建房间</button>
+                <button class="btn btn-secondary" onclick="showJoinRoom()">加入房间</button>
+            </div>
+            
+            <div class="features">
+                <div class="feature">⚡ 实时同步</div>
+                <div class="feature">📱 手机支持</div>
+                <div class="feature">🎭 无需注册</div>
+            </div>
+        </div>
+
+        <!-- 创建房间 -->
+        <div id="create-screen" class="screen">
+            <h2>创建房间</h2>
+            <div class="input-group">
+                <label>你的昵称</label>
+                <input type="text" id="create-nickname" placeholder="输入昵称" maxlength="10">
+            </div>
+            <div class="color-select">
+                <label>选择棋子颜色</label>
+                <div class="color-options">
+                    <div class="color-option selected" data-color="black">
+                        <div class="piece-preview black"></div>
+                        <span>黑棋</span>
+                    </div>
+                    <div class="color-option" data-color="white">
+                        <div class="piece-preview white"></div>
+                        <span>白棋</span>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="createRoom()">创建</button>
+            <button class="btn btn-text" onclick="showScreen('home-screen')">返回</button>
+        </div>
+
+        <!-- 加入房间 -->
+        <div id="join-screen" class="screen">
+            <h2>加入房间</h2>
+            <div class="input-group">
+                <label>房间号</label>
+                <input type="text" id="join-room-id" placeholder="输入6位房间号" maxlength="6">
+            </div>
+            <div class="input-group">
+                <label>你的昵称</label>
+                <input type="text" id="join-nickname" placeholder="输入昵称" maxlength="10">
+            </div>
+            <button class="btn btn-primary" onclick="joinRoom()">加入</button>
+            <button class="btn btn-text" onclick="showScreen('home-screen')">返回</button>
+        </div>
+
+        <!-- 等待页面 -->
+        <div id="waiting-screen" class="screen">
+            <h2>等待对手加入...</h2>
+            <div class="room-info">
+                <div class="room-id-display">
+                    <span class="label">房间号</span>
+                    <span id="waiting-room-id" class="id"></span>
+                    <button class="copy-btn" onclick="copyRoomId()">复制</button>
+                </div>
+                <p class="hint">把房间号发给朋友，让他们加入对战</p>
+            </div>
+            <div class="player-info">
+                <div class="player">
+                    <div class="piece black"></div>
+                    <span id="waiting-player-name">你</span>
+                </div>
+                <div class="vs">VS</div>
+                <div class="player empty">
+                    <div class="piece-placeholder">?</div>
+                    <span>等待加入...</span>
+                </div>
+            </div>
+            <button class="btn btn-danger" onclick="leaveRoom()">取消</button>
+        </div>
+
+        <!-- 游戏页面 -->
+        <div id="game-screen" class="screen">
+            <div class="game-header">
+                <div class="room-id">房间: <span id="game-room-id"></span></div>
+                <button class="btn btn-small" onclick="leaveRoom()">退出</button>
+            </div>
+            
+            <div class="players-bar">
+                <div class="player-card" id="player-black">
+                    <div class="piece black"></div>
+                    <div class="info">
+                        <span class="name"></span>
+                        <span class="status"></span>
+                    </div>
+                </div>
+                <div class="turn-indicator">
+                    <div class="turn-arrow" id="turn-arrow">⬅</div>
+                </div>
+                <div class="player-card" id="player-white">
+                    <div class="piece white"></div>
+                    <div class="info">
+                        <span class="name"></span>
+                        <span class="status"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="board-container">
+                <canvas id="board"></canvas>
+                <div id="game-message" class="message"></div>
+            </div>
+
+            <div class="game-controls">
+                <button class="btn btn-secondary" onclick="requestUndo()">悔棋</button>
+                <button class="btn btn-secondary" onclick="requestRestart()">重新开始</button>
+            </div>
+        </div>
+
+        <!-- 结果弹窗 -->
+        <div id="result-modal" class="modal">
+            <div class="modal-content">
+                <h2 id="result-title">游戏结束</h2>
+                <p id="result-message"></p>
+                <div class="modal-buttons">
+                    <button class="btn btn-primary" onclick="requestRestart()">再来一局</button>
+                    <button class="btn btn-secondary" onclick="backToHome()">返回首页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 确认弹窗 -->
+        <div id="confirm-modal" class="modal">
+            <div class="modal-content">
+                <h3 id="confirm-title">确认</h3>
+                <p id="confirm-message"></p>
+                <div class="modal-buttons">
+                    <button class="btn btn-primary" id="confirm-yes">确定</button>
+                    <button class="btn btn-secondary" onclick="closeConfirm()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="config.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
