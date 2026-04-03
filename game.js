@@ -270,8 +270,8 @@ function updateAllCountdowns(startTime) {
     // 更新自己的倒计时
     updateMyCountdown(timeLeft);
     
-    // 更新对手的倒计时
-    updateOpponentCountdown(timeLeft);
+    // 更新对手的倒计时（独立计算）
+    updateOpponentCountdown();
     
     // 时间到，自动下棋
     if (timeLeft <= 0 && isMyTurn && !gameState?.winner) {
@@ -302,7 +302,7 @@ function updateMyCountdown(seconds) {
 }
 
 // 更新对手的倒计时
-function updateOpponentCountdown(myTimeLeft) {
+function updateOpponentCountdown() {
     const players = gameState?.players || {};
     const opponentId = Object.keys(players).find(pid => pid !== playerId);
     if (!opponentId) return;
@@ -316,15 +316,14 @@ function updateOpponentCountdown(myTimeLeft) {
     
     const isOpponentTurn = opponent.color === gameState?.currentTurn && !gameState?.winner;
     if (isOpponentTurn) {
-        // 对手回合时，显示剩余时间（用总时间减去已用时间）
-        const opponentTimeLeft = TURN_TIME_LIMIT - myTimeLeft;
+        // 对手回合时，计算对手的剩余时间
+        const turnStartTime = gameState?.turnStartTime || Date.now();
+        const elapsed = Math.floor((Date.now() - turnStartTime) / 1000);
+        const opponentTimeLeft = Math.max(0, TURN_TIME_LIMIT - elapsed);
         opponentStatusEl.textContent = `${opponentTimeLeft}秒`;
         opponentStatusEl.style.color = opponentTimeLeft <= 10 ? '#ff4757' : '#999';
     } else {
-        // 不是对手回合，清空或显示空
-        if (!opponentStatusEl.textContent.includes('秒') || opponentStatusEl.textContent === '0 秒') {
-            opponentStatusEl.textContent = '';
-        }
+        opponentStatusEl.textContent = '';
     }
 }
 
